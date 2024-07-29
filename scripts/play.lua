@@ -50,12 +50,16 @@ function calculate_reward()
         
     end
 
+    if lap == 133 then
+        reward = reward + 5
+    end
+
 
     -- sanity check
-    if reward > 15 then
-        reward = 15
-    elseif reward < -15 then
-        reward = -15
+    if reward > 20 then
+        reward = 20
+    elseif reward < -20 then
+        reward = -20
     end
     
     prev_checkpoint = checkpoint
@@ -95,11 +99,10 @@ end
 function recieveActions()
     local action = comm.socketServerResponse()
     action = tonumber(action)
-    local INPUTS = {Left=0, Right=0, B=0}
+    local INPUTS = {Left=0, Right=0, B=1}
 
     if action == 0 then INPUTS.Left = 1
     elseif action == 1 then INPUTS.Right = 1
-    elseif action == 2 then INPUTS.B = 1
     end
 
     return INPUTS
@@ -110,48 +113,51 @@ end
 
 function run()
 
-   
-    local step = 0
-
-    comm.socketServerScreenShot()
-
     while true do
-        
-        local actions = recieveActions()
-        
-        for i=0, 10, 1 do
-            joypad.set(actions, 1) 
-            emu.frameadvance()
-        end
-        
-
-
+        local step = 0
+        local termination = false
         comm.socketServerScreenShot()
+
+        while not termination do
+            
+            local actions = recieveActions()
+            
+            for i=0, 10, 1 do
+                joypad.set(actions, 1) 
+                emu.frameadvance()
+            end
+            
+
+
+            comm.socketServerScreenShot()
+            
+            
+            termination = calulate_termination(step)
+            local reward = calculate_reward()
         
+            local msg = string.format("%d %d", bool_to_number(termination), reward)
+            
+            comm.socketServerSend(msg)
         
-        local termination = calulate_termination(step)
-        local reward = calculate_reward()
-    
-        local msg = string.format("%d %d", bool_to_number(termination), reward)
+            if termination then
+                savestate.load("../savestates/start.State")
+            end
         
-        comm.socketServerSend(msg)
-    
-        if termination then
-            savestate.load("../savestates/start.State")
-            step = 0
+            local lap = mainmemory.readbyte(0x0010C1)
+            
+            if lap == 133 then
+                savestate.load("../savestates/start.State")
+                
+                -- end the loop and wait for frame done, doesn't send true to model
+                termination = true
+            end
+        
+            step = step + 1
+            -- Frame done
+            comm.socketServerResponse()
         end
-    
-        local lap = mainmemory.readbyte(0x0010C1)
-        
-        if lap == 133 then
-            savestate.load("../savestates/start.State")
-            step = 0
-        end
-    
-        step = step + 1
-        -- Frame done
-        comm.socketServerResponse()
     end
+    
 end
 
 run()
