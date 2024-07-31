@@ -43,7 +43,6 @@ class Agent:
         self.memory = Replay_Memory(int(REPLAY_MEMORY_SIZE))
         
         self.model = KartModel().to(device)
-        # self.model.load_state_dict(torch.load("models/best.pth"))
         self.target_model = KartModel().to(device)
         self.target_model.load_state_dict(self.model.state_dict())
         
@@ -112,8 +111,9 @@ class Agent:
             mini_batch = self.memory.sample(self.mini_batch_size)
             self.optimise(mini_batch)
             
-            self.writer.add_scalar("Reward", total_reward, episode)
-            self.writer.add_scalar("Epslion", self.epslion, episode)
+            if episode % 10 == 0: 
+                self.writer.add_scalar("Reward", total_reward, episode)
+                self.writer.add_scalar("Epslion", self.epslion, episode)
             
             if total_reward > highest_reward:
                 highest_reward = total_reward
