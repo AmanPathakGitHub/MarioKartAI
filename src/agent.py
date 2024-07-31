@@ -23,7 +23,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class Agent:
     
-    def __init__(self, ip, port, config):
+    def __init__(self, ip, ports, config):
         
         MAX_STEPS = config.get("Training", "MAX_STEPS")
         REPLAY_MEMORY_SIZE = config.get("Training", "REPLAY_MEMORY_SIZE")
@@ -37,9 +37,14 @@ class Agent:
         self.mini_batch_size = int(config.get("Training", "MINI_BATCH_SIZE"))
         self.network_sync_rate = int(config.get("Training", "NETWORK_SYNC_RATE"))
         
-        self.connection = Connection(ip, int(port))
-        self.connection.sendData(str(MAX_STEPS))
         
+        self.connections = []
+        
+        for port in ports: 
+            connection = Connection(ip, int(port))
+            connection.sendData(str(MAX_STEPS))
+            self.connections.append(connection)
+            
         self.memory = Replay_Memory(int(REPLAY_MEMORY_SIZE))
         
         self.model = KartModel().to(device)
@@ -52,6 +57,7 @@ class Agent:
         self.writer = SummaryWriter()
        
     
+    
     def run(self):
         
         # Lowest possible reward * 1000 is Max_steps
@@ -59,9 +65,7 @@ class Agent:
         
         for episode in itertools.count():
             
-            image = self.connection.recieveScreenShot()
-            
-            state = self.convertImage(image).to(device)
+          
             termination = False
             
             step = 0
@@ -119,7 +123,11 @@ class Agent:
                 highest_reward = total_reward
                 torch.save(self.model.state_dict(), "models/best.pth")
     
-        
+    def getState(self, connection):
+        image = connection.recieveScreenShot()
+            
+        return self.convertImage(image).to(device)
+
     def sampleActions(self):
         actions = [0, 0, 0]
         actions[random.randint(0, 2)] = 1

@@ -13,10 +13,11 @@ with open("settings.cfg") as file:
     
    
    
-    
+ports = PORT.split(",")  
 
 
-subprocess.Popen(f"{EMUHAWK_PATH} \"{ROM_PATH}\" --lua=scripts/play.lua --socket_ip={IP_ADDRESS} --socket_port={PORT}")
+for port in ports:
+    subprocess.Popen(f"{EMUHAWK_PATH} \"{ROM_PATH}\" --lua=scripts/play.lua --socket_ip={IP_ADDRESS} --socket_port={port}")
 # subprocess.Popen(f"{EMUHAWK_PATH} \"{ROM_PATH}\" --lua=scripts/play.lua")
-agent = Agent(IP_ADDRESS, PORT, config)
+agent = Agent(IP_ADDRESS, ports, config)
 agent.run()
