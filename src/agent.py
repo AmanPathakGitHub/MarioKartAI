@@ -97,6 +97,8 @@ class Agent:
                 # train this frame
                 self.optimise([(state, action, next_state, reward, termination)])
                 
+                step += 1
+                
                 if step % self.network_sync_rate == 0:
                     self.target_model.load_state_dict(self.model.state_dict())
                     step = 0
