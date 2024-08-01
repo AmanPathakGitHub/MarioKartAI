@@ -24,7 +24,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class Agent:
     
-    def __init__(self, ip, ports, config):
+    def __init__(self, ip, port, num_env, config):
         
         MAX_STEPS = config.get("Training", "MAX_STEPS")
         REPLAY_MEMORY_SIZE = config.get("Training", "REPLAY_MEMORY_SIZE")
@@ -41,8 +41,9 @@ class Agent:
         
         self.connections = []
         
-        for port in ports: 
-            connection = Connection(ip, int(port))
+        #TODO: Needs to open on seperate threads this is too slow
+        for i in range(num_env):
+            connection = Connection(ip, int(port) + i)
             connection.sendData(str(MAX_STEPS))
             self.connections.append(connection)
             
