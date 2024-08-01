@@ -7,6 +7,7 @@ import time
 import io
 import random
 import itertools
+from threading import Thread
 
 from PIL import Image
 
@@ -65,48 +66,13 @@ class Agent:
         
         for episode in itertools.count():
             
-          
-            termination = False
-            
-            step = 0
-            
-            total_reward = 0
-            
-            while not termination:
+            threads = []
+            for i in range(len(self.connections)):
+                threads.append(Thread(target=self.startEnvLoop, args=[self.connections[i]]))
+                threads[i].start()
                 
-                
-                if random.random() < self.epslion:
-                    actions = self.sampleActions()
-                else:
-                    actions = self.model(state.unsqueeze(0)).squeeze()
-
-                action = torch.argmax(actions).to(device)
-                
-                self.connection.sendData(str(action.item()))
-                
-                image = self.connection.recieveScreenShot()
-                next_state = self.convertImage(image).to(device)
-                
-                msg = self.connection.recieveData(5)
-                termination, reward = msg.split()
-                
-                termination = bool(int(termination))
-                reward = int(reward)
-                
-                total_reward += reward
-                
-                
-                self.memory.append((state, action, next_state, reward, termination))
-                
-                # train this frame
-                self.optimise([(state, action, next_state, reward, termination)])
-                
-                if step % self.network_sync_rate == 0:
-                    self.target_model.load_state_dict(self.model.state_dict())
-                    step = 0
-                
-                state = next_state
-                self.connection.sendData("FRAME DONE!")
+            for t in threads:
+                t.join()
             
             
             # decay epsilon
@@ -115,13 +81,61 @@ class Agent:
             mini_batch = self.memory.sample(self.mini_batch_size)
             self.optimise(mini_batch)
             
-            if episode % 10 == 0: 
-                self.writer.add_scalar("Reward", total_reward, episode)
+            if episode % 10 == 0:
+                # self.writer.add_scalar("Reward", total_reward, episode)
                 self.writer.add_scalar("Epslion", self.epslion, episode)
             
             if total_reward > highest_reward:
                 highest_reward = total_reward
                 torch.save(self.model.state_dict(), "models/best.pth")
+    
+    # TODO this needs a better name
+    def startEnvLoop(self, connection):
+        
+        state = self.getState(connection)
+          
+        termination = False
+        step = 0 
+        total_reward = 0
+
+            
+        while not termination:
+            
+            
+            if random.random() < self.epslion:
+                actions = self.sampleActions()
+            else:
+                actions = self.model(state.unsqueeze(0)).squeeze()
+
+            action = torch.argmax(actions).to(device)
+            
+            connection.sendData(str(action.item()))
+            
+            next_state = self.getState(connection)
+            
+            msg = connection.recieveData(5)
+            termination, reward = msg.split()
+            
+            termination = bool(int(termination))
+            reward = int(reward)
+            
+            total_reward += reward
+            
+            
+            self.memory.append((state, action, next_state, reward, termination))
+            
+            # train this frame
+            # self.optimise([(state, action, next_state, reward, termination)])
+            
+            if step % self.network_sync_rate == 0:
+                self.target_model.load_state_dict(self.model.state_dict())
+                step = 0
+            
+            state = next_state
+            connection.sendData("FRAME DONE!")
+            
+        return total_reward, termination
+            
     
     def getState(self, connection):
         image = connection.recieveScreenShot()

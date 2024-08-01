@@ -1,16 +1,20 @@
 
 from collections import deque
+from threading import Lock
 
 import random
+
 
 class Replay_Memory:
     
     def __init__(self, maxlen):
         
         self.memory = deque([], maxlen)
+        self.lock = Lock()
         
     def append(self, x):
-        self.memory.append(x)
+        with self.lock:
+            self.memory.append(x)
     
     def sample(self, size):
         return random.sample(self.memory, size)
