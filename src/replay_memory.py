@@ -17,6 +17,9 @@ class Replay_Memory:
             self.memory.append(x)
     
     def sample(self, size):
+        if size > len(self.memory):
+            return self.memory
+        
         return random.sample(self.memory, size)
     
     def __len__(self):

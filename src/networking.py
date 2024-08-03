@@ -1,12 +1,15 @@
 import socket
 
+from threading import Thread
+
 class Connection:
     
     def __init__(self, ip, port):
         self.socket = socket.socket()
         self.client = None
         
-        self.connect(ip, port)
+        self.thread = Thread(target=self.connect, args=[ip, port])
+        self.thread.start()
     
     def connect(self, ip, port):
         self.socket.bind((ip, port))

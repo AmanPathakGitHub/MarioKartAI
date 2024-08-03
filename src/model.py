@@ -9,21 +9,21 @@ class KartModel(nn.Module):
         super(KartModel, self).__init__()
         
         self.convLayer = nn.Sequential(
-            nn.Conv2d(1, 6, 9),
+            nn.Conv2d(1, 6, 5),
             nn.ReLU(),
             nn.MaxPool2d(3, 3), 
-            nn.Conv2d(6, 16, 9),
+            nn.Conv2d(6, 16, 5),
             nn.ReLU(),
             nn.MaxPool2d(3, 3),
             nn.Flatten(),
         )
         
         self.net = nn.Sequential(
-            nn.Linear(7*7*16, 350),
+            nn.Linear(960, 512),
             nn.ReLU(),
-            nn.Linear(350, 100),
+            nn.Linear(512, 128),
             nn.ReLU(),
-            nn.Linear(100, 3)
+            nn.Linear(128, 3)
         ) 
        
         
