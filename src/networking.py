@@ -1,12 +1,15 @@
 import socket
 
+from threading import Thread
+
 class Connection:
     
     def __init__(self, ip, port):
         self.socket = socket.socket()
         self.client = None
         
-        self.connect(ip, port)
+        self.thread = Thread(target=self.connect, args=[ip, port])
+        self.thread.start()
     
     def connect(self, ip, port):
         self.socket.bind((ip, port))
@@ -35,11 +38,15 @@ class Connection:
         return msg_data
     
     def recieveScreenShot(self):
-        buffer = self.client.recv(20000)
+        try:
+            buffer = self.client.recv(20000)
         
-        msg = buffer.split(b' ', 1)
+            msg = buffer.split(b' ', 1)
+            return msg[1]
+        except ConnectionResetError:
+            # TODO save model maybe or return error
+            pass
         
-        return msg[1]
 
     
     def sendData(self, data):

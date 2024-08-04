@@ -7,6 +7,9 @@ import time
 import io
 import random
 import itertools
+import traceback
+from threading import Thread, Lock
+from multiprocessing.pool import ThreadPool
 
 from PIL import Image
 
@@ -23,7 +26,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class Agent:
     
-    def __init__(self, ip, port, config):
+    def __init__(self, ip, port, num_env, config):
         
         MAX_STEPS = config.get("Training", "MAX_STEPS")
         REPLAY_MEMORY_SIZE = config.get("Training", "REPLAY_MEMORY_SIZE")
@@ -37,75 +40,48 @@ class Agent:
         self.mini_batch_size = int(config.get("Training", "MINI_BATCH_SIZE"))
         self.network_sync_rate = int(config.get("Training", "NETWORK_SYNC_RATE"))
         
-        self.connection = Connection(ip, int(port))
-        self.connection.sendData(str(MAX_STEPS))
         
+        self.connections = []
+        
+        #TODO: Needs to open on seperate threads this is too slow
+        for i in range(num_env):
+            connection = Connection(ip, int(port) + i)
+            self.connections.append(connection)
+
+        
+        for connection in self.connections:
+            connection.thread.join()
+            connection.sendData(str(MAX_STEPS))
+            
         self.memory = Replay_Memory(int(REPLAY_MEMORY_SIZE))
         
+        self.model_lock = Lock()
         self.model = KartModel().to(device)
+        
         self.target_model = KartModel().to(device)
         self.target_model.load_state_dict(self.model.state_dict())
         
         self.optimiser = optim.Adam(self.model.parameters(), lr=float(config.get("Training", "LEARNING_RATE")))
         self.loss_fn = nn.MSELoss()
-        
+      
         self.writer = SummaryWriter()
-       
+        
+        self.total_reward = 0
+        self.num_env = num_env
+        
+    
     
     def run(self):
         
         # Lowest possible reward * 1000 is Max_steps
         highest_reward = -15 * 1000
         
+        pool = ThreadPool(processes=self.num_env)
+        
         for episode in itertools.count():
+            self.total_reward = 0
             
-            image = self.connection.recieveScreenShot()
-            
-            state = self.convertImage(image).to(device)
-            termination = False
-            
-            step = 0
-            
-            total_reward = 0
-            
-            while not termination:
-                
-                
-                if random.random() < self.epslion:
-                    actions = self.sampleActions()
-                else:
-                    actions = self.model(state.unsqueeze(0)).squeeze()
-
-                action = torch.argmax(actions).to(device)
-                
-                self.connection.sendData(str(action.item()))
-                
-                image = self.connection.recieveScreenShot()
-                next_state = self.convertImage(image).to(device)
-                
-                msg = self.connection.recieveData(5)
-                termination, reward = msg.split()
-                
-                termination = bool(int(termination))
-                reward = int(reward)
-                
-                total_reward += reward
-                
-                
-                self.memory.append((state, action, next_state, reward, termination))
-                
-                # train this frame
-                self.optimise([(state, action, next_state, reward, termination)])
-                
-                step += 1
-                
-                if step % self.network_sync_rate == 0:
-                    self.target_model.load_state_dict(self.model.state_dict())
-                    step = 0
-                
-                state = next_state
-                self.connection.sendData("FRAME DONE!")
-            
+            pool.map(self.startEnvLoop, [c for c in self.connections])
             
             # decay epsilon
             self.epslion = max(self.epslion*self.epslion_decay, self.epslion_min)
@@ -113,15 +89,73 @@ class Agent:
             mini_batch = self.memory.sample(self.mini_batch_size)
             self.optimise(mini_batch)
             
-            if episode % 10 == 0: 
-                self.writer.add_scalar("Reward", total_reward, episode)
+            if episode % 10 == 0:
+                self.writer.add_scalar("Reward", self.total_reward / self.num_env, episode)
                 self.writer.add_scalar("Epslion", self.epslion, episode)
             
-            if total_reward > highest_reward:
-                highest_reward = total_reward
+            if self.total_reward > highest_reward:
+                highest_reward = self.total_reward
                 torch.save(self.model.state_dict(), "models/best.pth")
-    
+                
+
         
+    # TODO this needs a better name
+    def startEnvLoop(self, connection):
+        
+        state = self.getState(connection)
+          
+        termination = False
+        step = 0 
+
+            
+        while not termination:
+            
+            
+            if random.random() < self.epslion:
+                actions = self.sampleActions()
+            else:
+                with torch.no_grad():
+                    actions = self.model(state.unsqueeze(0)).squeeze()
+
+            action = torch.argmax(actions).to(device)
+            
+            connection.sendData(str(action.item()))
+            
+            next_state = self.getState(connection)
+            
+            msg = connection.recieveData(5)
+            termination, reward = msg.split()
+            
+            termination = bool(int(termination))
+            reward = int(reward)
+            
+            
+            
+            self.memory.append((state, action, next_state, reward, termination))
+            
+            # train this frame
+            with self.model_lock:
+                self.total_reward += reward
+                self.optimise([(state, action, next_state, reward, termination)])
+            
+            step += 1
+            
+            if step % self.network_sync_rate == 0:
+                with self.model_lock:
+                    self.target_model.load_state_dict(self.model.state_dict())
+                    step = 0
+            
+            state = next_state
+            connection.sendData("FRAME DONE!")
+
+
+                        
+    
+    def getState(self, connection):
+        image = connection.recieveScreenShot()
+            
+        return self.convertImage(image).to(device)
+
     def sampleActions(self):
         actions = [0, 0, 0]
         actions[random.randint(0, 2)] = 1
@@ -129,7 +163,7 @@ class Agent:
     
     def convertImage(self, data):
         
-        img = Image.open(io.BytesIO(data)).convert('L').resize((96, 96), Image.Resampling.NEAREST)
+        img = Image.open(io.BytesIO(data)).convert('L').resize((128, 128), Image.Resampling.NEAREST).crop((0, 0, 128, 128 / 2 - 3))
         img = transforms.ToTensor()(img)
         
         return img
@@ -144,7 +178,7 @@ class Agent:
         rewards = torch.tensor(rewards, dtype=torch.int64).to(device)
         terminations = torch.tensor(terminations, dtype=torch.int64).to(device)
         
-        current_q = self.model(states).gather(dim=1, index=actions.unsqueeze(1)).squeeze()
+        current_q = self.model(states).gather(dim=1, index=actions.unsqueeze(1)).squeeze(1)
 
         with torch.no_grad():
             target_q = rewards + (1 - terminations) * self.discount_factor * self.target_model(next_states).max(dim=1)[0]

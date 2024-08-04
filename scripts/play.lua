@@ -35,9 +35,9 @@ function calculate_reward()
     --     reward = reward - 5
     -- end
 
-    -- if collision == 7 then
-    --     reward = reward - 8
-    -- end
+    if collision > 0 then
+        reward = reward - 8
+    end
 
     if prev_checkpoint < checkpoint then
         reward = reward + 10
@@ -56,10 +56,10 @@ function calculate_reward()
 
 
     -- sanity check
-    if reward > 20 then
-        reward = 20
-    elseif reward < -20 then
-        reward = -20
+    if reward > 30 then
+        reward = 30
+    elseif reward < -30 then
+        reward = -30
     end
     
     prev_checkpoint = checkpoint
@@ -138,6 +138,17 @@ function run()
             local msg = string.format("%d %d", bool_to_number(termination), reward)
             
             comm.socketServerSend(msg)
+
+            -- draw reward on screen
+            gui.cleartext()
+            if reward > 0 then 
+                gui.drawText(115, 50, tostring(reward), "#00FF00")
+            elseif reward < 0 then
+                gui.drawText(115, 50, tostring(reward), "#FF0000")
+            else
+                gui.drawText(115, 50, tostring(reward), "#FFFFFF")
+            end
+
         
             if termination then
                 savestate.load("../savestates/start.State")
