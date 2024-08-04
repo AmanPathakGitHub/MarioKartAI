@@ -7,7 +7,9 @@ import time
 import io
 import random
 import itertools
+import traceback
 from threading import Thread, Lock
+from multiprocessing.pool import ThreadPool
 
 from PIL import Image
 
@@ -66,6 +68,7 @@ class Agent:
         
         self.total_reward = 0
         self.num_env = num_env
+        
     
     
     def run(self):
@@ -73,34 +76,28 @@ class Agent:
         # Lowest possible reward * 1000 is Max_steps
         highest_reward = -15 * 1000
         
+        pool = ThreadPool(processes=self.num_env)
+        
         for episode in itertools.count():
             self.total_reward = 0
+            
+            pool.map(self.startEnvLoop, [c for c in self.connections])
+            
+            # decay epsilon
+            self.epslion = max(self.epslion*self.epslion_decay, self.epslion_min)
+            
+            mini_batch = self.memory.sample(self.mini_batch_size)
+            self.optimise(mini_batch)
+            
+            if episode % 10 == 0:
+                self.writer.add_scalar("Reward", self.total_reward / self.num_env, episode)
+                self.writer.add_scalar("Epslion", self.epslion, episode)
+            
+            if self.total_reward > highest_reward:
+                highest_reward = self.total_reward
+                torch.save(self.model.state_dict(), "models/best.pth")
+                
 
-            try: 
-                threads = []
-                for i in range(len(self.connections)):
-                    threads.append(Thread(target=self.startEnvLoop, args=[self.connections[i]]))
-                    threads[i].start()
-                    
-                for t in threads:
-                    t.join()
-                
-                
-                # decay epsilon
-                self.epslion = max(self.epslion*self.epslion_decay, self.epslion_min)
-                
-                mini_batch = self.memory.sample(self.mini_batch_size)
-                self.optimise(mini_batch)
-                
-                if episode % 10 == 0:
-                    self.writer.add_scalar("Reward", self.total_reward / self.num_env, episode)
-                    self.writer.add_scalar("Epslion", self.epslion, episode)
-                
-                if self.total_reward > highest_reward:
-                    highest_reward = self.total_reward
-                    torch.save(self.model.state_dict(), "models/best.pth")
-            except:
-                torch.save(self.model.state_dict(), "models/last.pth")
         
     # TODO this needs a better name
     def startEnvLoop(self, connection):
@@ -117,7 +114,8 @@ class Agent:
             if random.random() < self.epslion:
                 actions = self.sampleActions()
             else:
-                actions = self.model(state.unsqueeze(0)).squeeze()
+                with torch.no_grad():
+                    actions = self.model(state.unsqueeze(0)).squeeze()
 
             action = torch.argmax(actions).to(device)
             
@@ -139,6 +137,8 @@ class Agent:
             with self.model_lock:
                 self.total_reward += reward
                 self.optimise([(state, action, next_state, reward, termination)])
+            
+            step += 1
             
             if step % self.network_sync_rate == 0:
                 with self.model_lock:
@@ -178,7 +178,7 @@ class Agent:
         rewards = torch.tensor(rewards, dtype=torch.int64).to(device)
         terminations = torch.tensor(terminations, dtype=torch.int64).to(device)
         
-        current_q = self.model(states).gather(dim=1, index=actions.unsqueeze(1)).squeeze()
+        current_q = self.model(states).gather(dim=1, index=actions.unsqueeze(1)).squeeze(1)
 
         with torch.no_grad():
             target_q = rewards + (1 - terminations) * self.discount_factor * self.target_model(next_states).max(dim=1)[0]
