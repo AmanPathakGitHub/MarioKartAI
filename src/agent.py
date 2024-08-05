@@ -152,7 +152,11 @@ class Agent:
                         
     
     def getState(self, connection):
-        image = connection.recieveScreenShot()
+        image, err = connection.recieveScreenShot()
+        
+        if err:
+            torch.save(self.model.state_dict(), "models/last.pth")
+            exit(-1)
             
         return self.convertImage(image).to(device)
 

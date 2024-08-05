@@ -42,10 +42,9 @@ class Connection:
             buffer = self.client.recv(20000)
         
             msg = buffer.split(b' ', 1)
-            return msg[1]
-        except ConnectionResetError:
-            # TODO save model maybe or return error
-            pass
+            return msg[1], False
+        except ConnectionResetError as err:
+            return "", True
         
 
     
