@@ -57,11 +57,13 @@ class Agent:
         
         self.model_lock = Lock()
         self.model = KartModel().to(device)
+        # self.model.load_state_dict(torch.load("models/last.pth"))
         
         self.target_model = KartModel().to(device)
         self.target_model.load_state_dict(self.model.state_dict())
         
         self.optimiser = optim.Adam(self.model.parameters(), lr=float(config.get("Training", "LEARNING_RATE")))
+        # self.optimiser.load_state_dict(torch.load("models/last-optim.pth"))
         self.loss_fn = nn.MSELoss()
       
         self.writer = SummaryWriter()
@@ -87,15 +89,19 @@ class Agent:
             self.epslion = max(self.epslion*self.epslion_decay, self.epslion_min)
             
             mini_batch = self.memory.sample(self.mini_batch_size)
-            self.optimise(mini_batch)
+            self.optimise(mini_batch, episode=episode)
             
             if episode % 10 == 0:
                 self.writer.add_scalar("Reward", self.total_reward / self.num_env, episode)
                 self.writer.add_scalar("Epslion", self.epslion, episode)
+                
+            if episode % self.network_sync_rate == 0:
+                self.target_model.load_state_dict(self.model.state_dict())
             
             if self.total_reward > highest_reward:
                 highest_reward = self.total_reward
                 torch.save(self.model.state_dict(), "models/best.pth")
+                torch.save(self.optimiser.state_dict(), "models/best-optim.pth")
                 
 
         
@@ -114,9 +120,12 @@ class Agent:
             if random.random() < self.epslion:
                 actions = self.sampleActions()
             else:
-                with torch.no_grad():
-                    actions = self.model(state.unsqueeze(0)).squeeze()
-
+                with self.model_lock:
+                    self.model.eval()
+                    with torch.no_grad():
+                        actions = self.model(state.unsqueeze(0)).squeeze()
+                    self.model.train()
+                
             action = torch.argmax(actions).to(device)
             
             connection.sendData(str(action.item()))
@@ -138,12 +147,12 @@ class Agent:
                 self.total_reward += reward
                 self.optimise([(state, action, next_state, reward, termination)])
             
-            step += 1
+            # step += 1
             
-            if step % self.network_sync_rate == 0:
-                with self.model_lock:
-                    self.target_model.load_state_dict(self.model.state_dict())
-                    step = 0
+            # if step % self.network_sync_rate == 0:
+            #     with self.model_lock:
+            #         self.target_model.load_state_dict(self.model.state_dict())
+            #         step = 0
             
             state = next_state
             connection.sendData("FRAME DONE!")
@@ -155,7 +164,10 @@ class Agent:
         image, err = connection.recieveScreenShot()
         
         if err:
-            torch.save(self.model.state_dict(), "models/last.pth")
+            # locking the model so the weights don't get changed from another thread while saving
+            with self.model_lock:
+                torch.save(self.model.state_dict(), "models/last.pth")
+                torch.save(self.optimiser.state_dict(), "models/last-optim.pth")
             exit(-1)
             
         return self.convertImage(image).to(device)
@@ -167,12 +179,14 @@ class Agent:
     
     def convertImage(self, data):
         
-        img = Image.open(io.BytesIO(data)).convert('L').resize((128, 128), Image.Resampling.NEAREST).crop((0, 0, 128, 128 / 2 - 3))
+        # halving the image size
+        # also colors are already normalised
+        img = Image.open(io.BytesIO(data)).resize((200, 66), Image.NEAREST)
         img = transforms.ToTensor()(img)
         
         return img
     
-    def optimise(self, mini_batch):
+    def optimise(self, mini_batch, episode=0):
         
         states, actions, next_states, rewards, terminations = zip(*mini_batch)
         
@@ -189,6 +203,12 @@ class Agent:
             
         loss = self.loss_fn(current_q, target_q)
         
+        if episode != 0:
+            self.writer.add_scalar("Loss", loss.item(), episode)
+        
         self.optimiser.zero_grad()
         loss.backward()
+        
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+        
         self.optimiser.step()

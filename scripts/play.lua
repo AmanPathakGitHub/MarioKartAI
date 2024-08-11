@@ -139,7 +139,7 @@ function run()
             local actions = recieveActions()
             
             for i=0, 10, 1 do
-                -- joypad.set(actions, 1) 
+                joypad.set(actions, 1) 
                 emu.frameadvance()
             end
             

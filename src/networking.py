@@ -39,10 +39,14 @@ class Connection:
     
     def recieveScreenShot(self):
         try:
-            buffer = self.client.recv(20000)
+            buffer = self.client.recv(25000)
         
-            msg = buffer.split(b' ', 1)
-            return msg[1], False
+            msg_length, msg_data = buffer.split(b' ', 1)
+            
+            while len(msg_data) < int(msg_length):
+                msg_data += self.client.recv(int(msg_length) - len(msg_data))
+            
+            return msg_data, False
         except ConnectionResetError as err:
             return "", True
         

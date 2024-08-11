@@ -8,22 +8,39 @@ class KartModel(nn.Module):
     def __init__(self):
         super(KartModel, self).__init__()
         
+        # Nvidia driving model
         self.convLayer = nn.Sequential(
-            nn.Conv2d(1, 6, 5),
+            nn.Conv2d(3, 24, 5, stride=2),
             nn.ReLU(),
-            nn.MaxPool2d(3, 3), 
-            nn.Conv2d(6, 16, 5),
+           
+            nn.Conv2d(24, 36, 5, stride=2),
             nn.ReLU(),
-            nn.MaxPool2d(3, 3),
-            nn.Flatten(),
+           
+            nn.Conv2d(36, 48, 5, stride=2),
+            nn.ReLU(),
+            
+            
+            nn.Conv2d(48, 64, 3),
+            nn.ReLU(),
+           
+           
+            nn.Conv2d(64, 64, 3),
+            nn.ReLU(),
+           
+            nn.Flatten()
         )
         
         self.net = nn.Sequential(
-            nn.Linear(960, 512),
+            nn.Linear(1152, 100),
             nn.ReLU(),
-            nn.Linear(512, 128),
+            
+            nn.Linear(100, 50),
             nn.ReLU(),
-            nn.Linear(128, 3)
+            
+            nn.Linear(50, 10),
+            nn.ReLU(),
+            
+            nn.Linear(10, 3)
         ) 
        
         
