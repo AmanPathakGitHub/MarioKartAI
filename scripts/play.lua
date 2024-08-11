@@ -70,18 +70,34 @@ end
 
 -- bad termination
 local speed_timer = 0
+local checkpoint_timer = 0
 function calulate_termination(step)
 
     
     local speed = mainmemory.read_u16_be(0x0010EA) --600+ 400-
+    local checkpoint = mainmemory.readbyte(0x0010DC) 
+
     if speed < 400 then
         speed_timer = speed_timer + 1
     else
         speed_timer = 0
     end
 
+    if prev_checkpoint == checkpoint or prev_checkpoint > checkpoint then 
+        checkpoint_timer = checkpoint_timer + 1
+    else
+        checkpoint_timer = 0
+    end
+
     if speed_timer > 1000 then
         speed_timer = 0
+        return true
+    end
+
+    -- Equates to 10 seconds
+    -- 60 frames a second, each step is 10 frames 
+    if checkpoint_timer > 60 then
+        checkpoint_timer = 0
         return true
     end
 
@@ -123,7 +139,7 @@ function run()
             local actions = recieveActions()
             
             for i=0, 10, 1 do
-                joypad.set(actions, 1) 
+                -- joypad.set(actions, 1) 
                 emu.frameadvance()
             end
             
