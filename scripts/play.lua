@@ -25,6 +25,8 @@ function calculate_reward()
 
     local reward = 0
 
+    checkpoint = checkpoint + lap * lapsize
+
     -- if speed > 500 then 
     --     reward = reward + 1
     -- else
@@ -45,21 +47,22 @@ function calculate_reward()
         reward = reward - 10
     end
     
-    if prev_lap > lap then
-        reward = reward + 15
+    -- if prev_lap > lap then
+    --     reward = reward + 15
         
-    end
+    -- end
 
-    if lap == 133 then
-        reward = reward + 5
-    end
+    -- if lap == 133 then
+    --     reward = reward + 5
+    -- end
 
 
     -- sanity check
-    if reward > 30 then
-        reward = 30
-    elseif reward < -30 then
-        reward = -30
+    -- this is definitely redundant, ill keep it here in case the reward function ever changes
+    if reward > 10 then
+        reward = 10
+    elseif reward < -10 then
+        reward = -10
     end
     
     prev_checkpoint = checkpoint
