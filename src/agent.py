@@ -60,16 +60,19 @@ class Agent:
         # self.model.load_state_dict(torch.load("models/last.pth"))
         
         self.target_model = KartModel().to(device)
-        self.target_model.load_state_dict(self.model.state_dict())
+        # self.target_model.load_state_dict(self.model.state_dict())
         
         self.optimiser = optim.Adam(self.model.parameters(), lr=float(config.get("Training", "LEARNING_RATE")))
-        # self.optimiser.load_state_dict(torch.load("models/last-optim.pth"))
+        self.optimiser.load_state_dict(torch.load("models/last-optim.pth"))
         self.loss_fn = nn.MSELoss()
       
         self.writer = SummaryWriter()
         
         self.total_reward = 0
         self.num_env = num_env
+        
+        self.starting_episode = 0
+        
         
     
     
@@ -80,7 +83,7 @@ class Agent:
         
         pool = ThreadPool(processes=self.num_env)
         
-        for episode in itertools.count():
+        for episode in itertools.count(self.starting_episode):
             self.total_reward = 0
             
             pool.map(self.startEnvLoop, [c for c in self.connections])
@@ -95,13 +98,14 @@ class Agent:
                 self.writer.add_scalar("Reward", self.total_reward / self.num_env, episode)
                 self.writer.add_scalar("Epslion", self.epslion, episode)
                 
-            if episode % self.network_sync_rate == 0:
-                self.target_model.load_state_dict(self.model.state_dict())
+            # if episode % self.network_sync_rate == 0:
+            #     self.target_model.load_state_dict(self.model.state_dict())
             
             if self.total_reward > highest_reward:
                 highest_reward = self.total_reward
-                torch.save(self.model.state_dict(), "models/best.pth")
-                torch.save(self.optimiser.state_dict(), "models/best-optim.pth")
+                # torch.save(self.model.state_dict(), "models/best.pth")
+                # torch.save(self.optimiser.state_dict(), "models/best-optim.pth")
+                self.saveCheckpoint(episode)
                 
 
         
@@ -147,12 +151,12 @@ class Agent:
                 self.total_reward += reward
                 self.optimise([(state, action, next_state, reward, termination)])
             
-            # step += 1
+            step += 1
             
-            # if step % self.network_sync_rate == 0:
-            #     with self.model_lock:
-            #         self.target_model.load_state_dict(self.model.state_dict())
-            #         step = 0
+            if step % self.network_sync_rate == 0:
+                with self.model_lock:
+                    self.target_model.load_state_dict(self.model.state_dict())
+                    step = 0
             
             state = next_state
             connection.sendData("FRAME DONE!")
@@ -212,3 +216,26 @@ class Agent:
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
         
         self.optimiser.step()
+    
+    # episode number
+    # epsilon
+    # optimiser weights
+    # model weights
+    
+    def saveCheckpoint(self, epsiode):
+        torch.save({'episode' : epsiode,
+                    'model_weights' : self.model.state_dict(),
+                    'optimiser_weights' : self.optimiser.state_dict(),
+                    'epsilon' : self.epslion}, "./checkpoints/recent-checkpoint.pth")
+    
+    def loadCheckpoint(self, filepath):
+        try:
+            checkpoint = torch.load(filepath)
+        
+            self.starting_episode = checkpoint['episode']
+            self.epslion = checkpoint['epsilon']
+            self.model.load_state_dict(checkpoint['model_weights'])
+            self.optimiser.load_state_dict(checkpoint['optimiser_weights'])
+        except:
+            print("Invalid or no checkpoint provided")
+                
