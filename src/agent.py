@@ -40,6 +40,10 @@ class Agent:
         self.mini_batch_size = int(config.get("Training", "MINI_BATCH_SIZE"))
         self.network_sync_rate = int(config.get("Training", "NETWORK_SYNC_RATE"))
         
+        self.save_frequency = int(config.get("Checkpoint", "SAVE_FREQUENCY"))
+        
+        self.log_frequency = int(config.get("Tensorboard", "LOG_RATE"))
+        
         
         self.connections = []
         
@@ -60,10 +64,10 @@ class Agent:
         # self.model.load_state_dict(torch.load("models/last.pth"))
         
         self.target_model = KartModel().to(device)
-        # self.target_model.load_state_dict(self.model.state_dict())
+        self.target_model.load_state_dict(self.model.state_dict())
         
         self.optimiser = optim.Adam(self.model.parameters(), lr=float(config.get("Training", "LEARNING_RATE")))
-        self.optimiser.load_state_dict(torch.load("models/last-optim.pth"))
+        #  self.optimiser.load_state_dict(torch.load("models/last-optim.pth"))
         self.loss_fn = nn.MSELoss()
       
         self.writer = SummaryWriter()
@@ -86,26 +90,30 @@ class Agent:
         for episode in itertools.count(self.starting_episode):
             self.total_reward = 0
             
-            pool.map(self.startEnvLoop, [c for c in self.connections])
+            pool.map(self.startEnvLoop, self.connections)
             
             # decay epsilon
             self.epslion = max(self.epslion*self.epslion_decay, self.epslion_min)
             
-            mini_batch = self.memory.sample(self.mini_batch_size)
-            self.optimise(mini_batch, episode=episode)
+            # batch stuff takes longer cuz of the number of enviroments, 
+            # training should go faster now that we are doing a mini batch for each enviroment
+            # We pray that we don't overfit
+            for i in range(self.num_env):
+                mini_batch = self.memory.sample(self.mini_batch_size)
+                self.optimise(mini_batch, episode=episode)
             
-            if episode % 10 == 0:
+            if episode % self.log_frequency == 0:
                 self.writer.add_scalar("Reward", self.total_reward / self.num_env, episode)
                 self.writer.add_scalar("Epslion", self.epslion, episode)
                 
-            # if episode % self.network_sync_rate == 0:
-            #     self.target_model.load_state_dict(self.model.state_dict())
+            if episode % self.save_frequency == 0:
+                self.saveCheckpoint(episode, "./checkpoints/last-checkpoint.pth")
             
             if self.total_reward > highest_reward:
+                
                 highest_reward = self.total_reward
-                # torch.save(self.model.state_dict(), "models/best.pth")
-                # torch.save(self.optimiser.state_dict(), "models/best-optim.pth")
-                self.saveCheckpoint(episode)
+                
+                self.saveCheckpoint(episode, "./checkpoints/best-checkpoint.pth")
                 
 
         
@@ -140,7 +148,7 @@ class Agent:
             termination, reward = msg.split()
             
             termination = bool(int(termination))
-            reward = int(reward)
+            reward = int(reward) / 10
             
             
             
@@ -185,7 +193,7 @@ class Agent:
         
         # halving the image size
         # also colors are already normalised
-        img = Image.open(io.BytesIO(data)).resize((200, 66), Image.NEAREST)
+        img = Image.open(io.BytesIO(data)).crop((0, 0, 256, 112 - 4)).resize((200, 66), Image.NEAREST)
         img = transforms.ToTensor()(img)
         
         return img
@@ -195,7 +203,7 @@ class Agent:
         states, actions, next_states, rewards, terminations = zip(*mini_batch)
         
         states = torch.stack(states)
-        actions = torch.stack(actions)
+        actions = torch.stack(actions).to(device)
         next_states = torch.stack(next_states)
         rewards = torch.tensor(rewards, dtype=torch.int64).to(device)
         terminations = torch.tensor(terminations, dtype=torch.int64).to(device)
@@ -207,8 +215,8 @@ class Agent:
             
         loss = self.loss_fn(current_q, target_q)
         
-        if episode != 0:
-            self.writer.add_scalar("Loss", loss.item(), episode)
+        # if episode != 0:
+        #     self.writer.add_scalar("Loss", loss.item(), episode)
         
         self.optimiser.zero_grad()
         loss.backward()
@@ -222,19 +230,22 @@ class Agent:
     # optimiser weights
     # model weights
     
-    def saveCheckpoint(self, epsiode):
+    def saveCheckpoint(self, epsiode, filepath):
         torch.save({'episode' : epsiode,
                     'model_weights' : self.model.state_dict(),
                     'optimiser_weights' : self.optimiser.state_dict(),
-                    'epsilon' : self.epslion}, "./checkpoints/recent-checkpoint.pth")
+                    'epsilon' : self.epslion}, filepath)
     
     def loadCheckpoint(self, filepath):
         try:
             checkpoint = torch.load(filepath)
-        
+            
+            print(f"Loaded checkpoint at {filepath}")
+            
             self.starting_episode = checkpoint['episode']
-            self.epslion = checkpoint['epsilon']
+            # self.epslion = checkpoint['epsilon']
             self.model.load_state_dict(checkpoint['model_weights'])
+            self.target_model.load_state_dict(self.model.state_dict())
             self.optimiser.load_state_dict(checkpoint['optimiser_weights'])
         except:
             print("Invalid or no checkpoint provided")
