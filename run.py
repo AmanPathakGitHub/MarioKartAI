@@ -17,7 +17,7 @@ with open("settings.cfg") as file:
 
 for i in range(NUM_ENV):
     subprocess.Popen(f"{EMUHAWK_PATH} \"{ROM_PATH}\" --lua=scripts/play.lua --socket_ip={IP_ADDRESS} --socket_port={str(int(PORT)+i)}")
-# subprocess.Popen(f"{EMUHAWK_PATH} \"{ROM_PATH}\" --lua=scripts/play.lua")
+
 agent = Agent(IP_ADDRESS, PORT, NUM_ENV, config)
 agent.loadCheckpoint(CHECKPOINT_PATH)
 agent.run()

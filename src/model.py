@@ -33,12 +33,15 @@ class KartModel(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(1152, 100),
             nn.ReLU(),
+            nn.Dropout(),
             
             nn.Linear(100, 50),
             nn.ReLU(),
+            nn.Dropout(),
             
             nn.Linear(50, 10),
             nn.ReLU(),
+            nn.Dropout(),
             
             nn.Linear(10, 3)
         ) 
