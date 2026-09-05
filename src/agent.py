@@ -68,7 +68,7 @@ class Agent:
         
         self.optimiser = optim.Adam(self.model.parameters(), lr=float(config.get("Training", "LEARNING_RATE")))
         #  self.optimiser.load_state_dict(torch.load("models/last-optim.pth"))
-        self.loss_fn = nn.MSELoss()
+        self.loss_fn = nn.SmoothL1Loss()
       
         self.writer = SummaryWriter()
         
@@ -91,7 +91,7 @@ class Agent:
             self.total_reward = 0
             
             pool.map(self.startEnvLoop, self.connections)
-            
+               
             # decay epsilon
             self.epslion = max(self.epslion*self.epslion_decay, self.epslion_min)
             
@@ -110,8 +110,7 @@ class Agent:
                 self.saveCheckpoint(episode, "./checkpoints/last-checkpoint.pth")
             
             if self.total_reward > highest_reward:
-                
-                highest_reward = self.total_reward
+                  
                 
                 self.saveCheckpoint(episode, "./checkpoints/best-checkpoint.pth")
                 
@@ -133,7 +132,6 @@ class Agent:
                 actions = self.sampleActions()
             else:
                 with self.model_lock:
-                    self.model.eval()
                     with torch.no_grad():
                         actions = self.model(state.unsqueeze(0)).squeeze()
                     self.model.train()
@@ -149,15 +147,14 @@ class Agent:
             
             termination = bool(int(termination))
             reward = int(reward) / 10
-            
-            
-            
+            self.total_reward += reward
+
+
             self.memory.append((state, action, next_state, reward, termination))
             
-            # train this frame
-            with self.model_lock:
-                self.total_reward += reward
-                self.optimise([(state, action, next_state, reward, termination)])
+            # train single frame
+            # with self.model_lock:
+                # self.optimise([(state, action, next_state, reward, termination)])
             
             step += 1
             
@@ -185,15 +182,15 @@ class Agent:
         return self.convertImage(image).to(device)
 
     def sampleActions(self):
-        actions = [0, 0, 0]
+        actions = torch.zeros(3)
         actions[random.randint(0, 2)] = 1
-        return torch.tensor(actions)
+        return actions
     
     def convertImage(self, data):
         
         # halving the image size
         # also colors are already normalised
-        img = Image.open(io.BytesIO(data)).crop((0, 0, 256, 112 - 4)).resize((200, 66), Image.NEAREST)
+        img = Image.open(io.BytesIO(data)).crop((0, 23, 255, 112 - 5)).resize((200, 66), Image.NEAREST)
         img = transforms.ToTensor()(img)
         
         return img
@@ -205,7 +202,7 @@ class Agent:
         states = torch.stack(states)
         actions = torch.stack(actions).to(device)
         next_states = torch.stack(next_states)
-        rewards = torch.tensor(rewards, dtype=torch.int64).to(device)
+        rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
         terminations = torch.tensor(terminations, dtype=torch.int64).to(device)
         
         current_q = self.model(states).gather(dim=1, index=actions.unsqueeze(1)).squeeze(1)
@@ -215,8 +212,8 @@ class Agent:
             
         loss = self.loss_fn(current_q, target_q)
         
-        # if episode != 0:
-        #     self.writer.add_scalar("Loss", loss.item(), episode)
+        if episode != 0:
+            self.writer.add_scalar("Loss", loss.item(), episode)
         
         self.optimiser.zero_grad()
         loss.backward()
@@ -243,7 +240,7 @@ class Agent:
             print(f"Loaded checkpoint at {filepath}")
             
             self.starting_episode = checkpoint['episode']
-            # self.epslion = checkpoint['epsilon']
+            self.epslion = checkpoint['epsilon']
             self.model.load_state_dict(checkpoint['model_weights'])
             self.target_model.load_state_dict(self.model.state_dict())
             self.optimiser.load_state_dict(checkpoint['optimiser_weights'])

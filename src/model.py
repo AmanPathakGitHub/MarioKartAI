@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 # 224, 256
@@ -31,19 +32,13 @@ class KartModel(nn.Module):
         )
         
         self.net = nn.Sequential(
-            nn.Linear(1152, 100),
+            nn.Linear(1152, 256),
             nn.ReLU(),
-            nn.Dropout(),
             
-            nn.Linear(100, 50),
+            nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Dropout(),
-            
-            nn.Linear(50, 10),
-            nn.ReLU(),
-            nn.Dropout(),
-            
-            nn.Linear(10, 3)
+                        
+            nn.Linear(128, 3)
         ) 
        
         

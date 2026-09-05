@@ -16,6 +16,11 @@
 
 ## How to run 
 
+## BIHAWK CONFIG.INI
+changed DispMethod from 2 to 0
+
+
+
 **Make sure to Configure the Launch settings in the `settings.cfg` file first**
 
  - `EMUHAWK_FILEPATH` - File path to the Bizhawk emulator

@@ -11,7 +11,7 @@ with open("settings.cfg") as file:
     IP_ADDRESS = config.get("Launch", "SOCKET_IP")
     PORT = config.get("Launch", "SOCKET_PORT")
     NUM_ENV = int(config.get("Launch", "NUM_ENV"))
-    
+    LOAD_CHECKPOINT = config.getboolean("Checkpoint", "LOAD_CHECKPOINT")
     CHECKPOINT_PATH = config.get("Checkpoint", "FILE_PATH")
 
 
@@ -19,5 +19,8 @@ for i in range(NUM_ENV):
     subprocess.Popen(f"{EMUHAWK_PATH} \"{ROM_PATH}\" --lua=scripts/play.lua --socket_ip={IP_ADDRESS} --socket_port={str(int(PORT)+i)}")
 
 agent = Agent(IP_ADDRESS, PORT, NUM_ENV, config)
-agent.loadCheckpoint(CHECKPOINT_PATH)
+
+if LOAD_CHECKPOINT:
+    agent.loadCheckpoint(CHECKPOINT_PATH)
+
 agent.run()

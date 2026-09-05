@@ -10,22 +10,29 @@ local maxstepsmsg = comm.socketServerResponse()
 local MAX_STEPS = tonumber(maxstepsmsg)
 
 
-local prev_checkpoint = 0
+local prev_checkpoint = 27
 local prev_lap = 0
 
-function calculate_reward()
+function get_current_checkpoint()
     local checkpoint = mainmemory.readbyte(0x0010DC) 
     local lap = mainmemory.readbyte(0x0010C1)-128
     local lapsize = mainmemory.readbyte(0x000148)
 
+    checkpoint = checkpoint + (lap + 2) * lapsize
+
+    return checkpoint
+end
+
+function calculate_reward()
+
     local ground = mainmemory.readbyte(0x0010AE)
-    local collision = mainmemory.readbyte(0x001052)
+    local collision = mainmemory.readbyte(0x001052) -- This collision includes karts
 
     local speed = mainmemory.read_u16_be(0x0010EA) --600+ 400-
 
     local reward = 0
 
-    checkpoint = checkpoint + lap * lapsize
+    local checkpoint = get_current_checkpoint()
 
     -- if speed > 500 then 
     --     reward = reward + 1
@@ -33,12 +40,12 @@ function calculate_reward()
     --     reward = reward - 2
     -- end
 
-    -- if ground == 84 then
-    --     reward = reward - 5
-    -- end
+    if ground == 84 then
+        reward = reward - 5
+    end
 
-    if collision > 0 then
-        reward = reward - 8
+    if collision > 0 and ground == 84 then
+        reward = reward - 10
     end
 
     if prev_checkpoint < checkpoint then
@@ -59,11 +66,11 @@ function calculate_reward()
 
     -- sanity check
     -- this is definitely redundant, ill keep it here in case the reward function ever changes
-    if reward > 10 then
-        reward = 10
-    elseif reward < -10 then
-        reward = -10
-    end
+        if reward > 10 then
+            reward = 10
+        elseif reward < -10 then
+            reward = -10
+        end
     
     prev_checkpoint = checkpoint
     prev_lap = lap
@@ -78,7 +85,11 @@ function calulate_termination(step)
 
     
     local speed = mainmemory.read_u16_be(0x0010EA) --600+ 400-
-    local checkpoint = mainmemory.readbyte(0x0010DC) 
+    local checkpoint = get_current_checkpoint()
+    local collision = mainmemory.readbyte(0x001052)
+    local ground = mainmemory.readbyte(0x0010AE)
+
+
 
     if speed < 400 then
         speed_timer = speed_timer + 1
@@ -86,7 +97,11 @@ function calulate_termination(step)
         speed_timer = 0
     end
 
-    if prev_checkpoint == checkpoint or prev_checkpoint > checkpoint then 
+    if collision > 0 and ground == 84 then
+        return true
+    end
+
+    if prev_checkpoint >= checkpoint then 
         checkpoint_timer = checkpoint_timer + 1
     else
         checkpoint_timer = 0
@@ -94,12 +109,13 @@ function calulate_termination(step)
 
     if speed_timer > 1000 then
         speed_timer = 0
+
         return true
     end
 
-    -- Equates to 10 seconds
+    -- Equates to 100 seconds
     -- 60 frames a second, each step is 10 frames 
-    if checkpoint_timer > 60 then
+    if checkpoint_timer > 600 then
         checkpoint_timer = 0
         return true
     end
@@ -132,9 +148,14 @@ end
 
 function run()
 
+
+
     while true do
         local step = 0
         local termination = false
+        emu.frameadvance()
+        emu.frameadvance()
+        emu.frameadvance()
         comm.socketServerScreenShot()
 
         while not termination do
@@ -154,10 +175,7 @@ function run()
             termination = calulate_termination(step)
             local reward = calculate_reward()
         
-            local msg = string.format("%d %d", bool_to_number(termination), reward)
             
-            comm.socketServerSend(msg)
-
             -- draw reward on screen
             gui.cleartext()
             if reward > 0 then 
@@ -181,6 +199,10 @@ function run()
                 -- end the loop and wait for frame done, doesn't send true to model
                 termination = true
             end
+
+            local msg = string.format("%d %d", bool_to_number(termination), reward)
+            
+            comm.socketServerSend(msg)
         
             step = step + 1
             -- Frame done

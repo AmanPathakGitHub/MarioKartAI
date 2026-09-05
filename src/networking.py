@@ -18,7 +18,7 @@ class Connection:
         self.client, _ = self.socket.accept()
         print("Connnected to client!")
 
-        connection_msg = self.recieveData(10)
+        connection_msg = self.recieveData(10)   
         print("Recieved!", connection_msg)
 
         return True
